@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ScamNoMore Bingo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      text-align: center;
+    }
+    h1 {
+      color: #a00;
+    }
+    #start-game {
+      background-color: #a00;
+      color: white;
+      border: 2px solid #800;
+      padding: 20px 40px;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 10px;
+      transition: background-color 0.3s, transform 0.3s;
+    }
+    #start-game:hover {
+      background-color: #800;
+      transform: scale(1.1);
+    }
+    #start-game:active {
+      background-color: #600;
+    }
+    #bingo-board {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 5px;
+      max-width: 600px;
+      margin: 20px auto;
+    }
+    .cell {
+      background: #fff;
+      border: 2px solid #333;
+      padding: 20px;
+      font-size: 16px;
+      cursor: pointer;
+      position: relative;
+    }
+    .cell.clicked {
+      background: #cfc;
+    }
+    #progress {
+      width: 100%;
+      background: #ddd;
+      height: 20px;
+      margin: 20px 0;
+    }
+    #progress-bar {
+      height: 100%;
+      background: green;
+      width: 0%;
+    }
+    .speech-bubble {
+      position: absolute;
+      background: #fff;
+      border: 2px solid #333;
+      padding: 10px;
+      border-radius: 10px;
+      width: 200px;
+      z-index: 10;
+      text-align: left;
+      display: flex;
+      gap: 10px;
+    }
+    .speech-bubble img {
+      width: 50px;
+      height: auto;
+    }
+    #real-or-scam {
+      margin-top: 30px;
+      padding: 20px;
+      border: 2px solid #333;
+      background: #fff;
+      display: inline-block;
+    }
+    #real-or-scam button {
+      margin: 5px;
+    }
+    .category-header {
+      font-weight: bold;
+      background: #ddd;
+      padding: 10px;
+    }
+    #current-phrase {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+    }
+    #bingo-message {
+      font-size: 30px;
+      color: green;
+      font-weight: bold;
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h1>ScamNoMore Bingo</h1>
+
+<button id="start-game">Start Game</button>
+
+<div id="progress">
+  <div id="progress-bar"></div>
+</div>
+
+<div id="current-phrase"></div> <!-- This is where the called phrase will appear -->
+
+<div id="bingo-board"></div>
+
+<div id="real-or-scam">
+  <h2>Real or Scam?</h2>
+  <p id="ros-question"></p>
+  <button onclick="checkAnswer(true)">Real</button>
+  <button onclick="checkAnswer(false)">Scam</button>
+  <p id="ros-feedback"></p>
+</div>
+
+<div id="bingo-message">BINGO! You've completed all the squares!</div> <!-- Bingo message -->
+
+<!-- Add the Bingo sound -->
+<audio id="bingo-sound" src="bingo.mp3"></audio>
+<audio id="ding" src="ding.mp3"></audio>
+<audio id="error" src="error.mp3"></audio>
+
+<script>
+// Initialize the SpeechSynthesis API (for voice functionality)
+const synth = window.speechSynthesis;
+
+// Function to speak the current card number/phrase
+function speakCard(cardText) {
+  const utterance = new SpeechSynthesisUtterance(cardText);
+  utterance.pitch = 1;
+  utterance.rate = 0.7; // Slower speech speed
+  utterance.volume = 1;
+
+  // Speak the card text
+  synth.speak(utterance);
+
+  // After the speech is finished, wait for 3 seconds before moving on
+  utterance.onend = () => {
+    setTimeout(() => {
+      // Continue the game or update the next action after the pause
+      console.log('Speech finished. 3 seconds delay complete.');
+    }, 3000);  // 3 seconds delay
+  };
+}
+
+
+
+const scamsByCategory = {
+  B: [
+    { text: "IRS demanding immediate payment", info: "Real government agencies don’t demand payment over the phone." },
+    { text: "Robocall offering a free vacation", info: "Scammers use these to collect your personal info." },
+    { text: "Caller says your Social Security number is suspended", info: "That’s a scare tactic used by scammers." },
+  ],
+  I: [
+    { text: "Text: 'You won a gift card! Click here'", info: "Unsolicited prize texts are scams that harvest data." },
+    { text: "Text from 'bank' asking to verify login", info: "Banks don’t ask for info via text links." },
+    { text: "Package delivery failure text with link", info: "These are phishing texts that mimic delivery services." }
+  ],
+  N: [
+    { text: "Email: Suspicious login detected", info: "Check sender address — it’s likely fake." },
+    { text: "You've inherited millions!", info: "These 'Nigerian prince' emails are classic scams." },
+    { text: "Urgent password reset request", info: "Always verify by going to the real website." }
+  ],
+  G: [
+    { text: "DM from stranger asking for help", info: "They often try to build trust to scam later." },
+    { text: "Fake celebrity giveaway", info: "Celebrities don’t randomly give away money on social media." },
+    { text: "Job offer through Instagram", info: "Scammers use fake jobs to get your info." }
+  ],
+  O: [
+    { text: "Romantic interest needs money for emergency", info: "Common tactic in romance scams." },
+    { text: "Relative 'in jail' needs bail money", info: "Scammers impersonate loved ones in trouble." },
+    { text: "Friend’s account hacked asking for gift cards", info: "Always confirm identity outside the platform." }
+  ]
+};
+
+const scamTypes = ['B', 'I', 'N', 'G', 'O'];
+const board = document.getElementById('bingo-board');
+let clickedCount = 0;
+let availablePhrases = [];
+const totalCells = 15;  // Total number of cells on the board
+
+// Initialize availablePhrases with all scam phrases
+function initializePhrases() {
+  availablePhrases = [];
+  scamTypes.forEach(type => {
+    scamsByCategory[type].forEach(cell => {
+      availablePhrases.push(cell.text);
+    });
+  });
+}
+
+// Function to randomly select a phrase from the available phrases
+function getRandomPhrase() {
+  const randomIndex = Math.floor(Math.random() * availablePhrases.length);
+  return availablePhrases.splice(randomIndex, 1)[0];  // Remove selected phrase
+}
+
+// Display the currently called phrase
+function updateCurrentPhrase() {
+  const phrase = getRandomPhrase();
+  document.getElementById('current-phrase').textContent = `Currently Called: ${phrase}`;
+  speakCard(phrase);  // Call the speakCard function to read out the current phrase
+}
+
+// Create the bingo board with clickable cells
+function createBoard() {
+  scamTypes.forEach(type => {
+    const header = document.createElement('div');
+    header.textContent = type + " - " + scamCategoryName(type);
+    header.className = 'category-header';
+    board.appendChild(header);
+  });
+
+  for (let row = 0; row < 3; row++) {
+    scamTypes.forEach((type, colIndex) => {
+      const cellData = scamsByCategory[type][row];
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.textContent = cellData.text;
+      cell.dataset.info = cellData.info;
+      cell.addEventListener('click', () => handleClick(cell, cellData.text)); // Pass the text to the handler
+      board.appendChild(cell);
+    });
+  }
+}
+
+function scamCategoryName(letter) {
+  switch (letter) {
+    case 'B': return 'Phone';
+    case 'I': return 'Text';
+    case 'N': return 'Email';
+    case 'G': return 'Social';
+    case 'O': return 'Romance';
+  }
+}
+
+// Handle cell click (mark it and show info)
+function handleClick(cell, phrase) {
+  if (!cell.classList.contains('clicked')) {
+    cell.classList.add('clicked');
+    document.getElementById('ding').play();
+    clickedCount++;
+    updateProgress();
+
+    const bubble = document.createElement('div');
+    bubble.className = 'speech-bubble';
+    bubble.style.top = `${cell.offsetTop}px`;
+    bubble.style.left = `${cell.offsetLeft + cell.offsetWidth + 10}px`;
+    bubble.innerHTML = `
+      <img src="questy.jpg" alt="Questy">
+      <div><strong>Questy says:</strong><br>${cell.dataset.info}</div>
+    `;
+    document.body.appendChild(bubble);
+
+    setTimeout(() => bubble.remove(), 5000);
+
+    // Update the phrase display
+    updateCurrentPhrase();
+    
+    // Check for Bingo after each click
+    checkBingo();
+  }
+}
+
+// Update the progress bar based on the number of clicked cells
+function updateProgress() {
+  const percent = (clickedCount / totalCells) * 100;
+  document.getElementById('progress-bar').style.width = percent + '%';
+}
+
+// Check if the player has completed all cells (Bingo!)
+function checkBingo() {
+  if (clickedCount === totalCells) {
+    document.getElementById('bingo-message').style.display = 'block'; // Show the Bingo message
+    document.getElementById('bingo-sound').play();  // Play the Bingo sound
+  }
+}
+
+// Real or Scam game functionality
+const questions = [
+  {
+    question: "You get a text saying 'Click here to claim your $500 prize.'",
+    isReal: false,
+    explanation: "That’s a scam. Never click links from unknown texts."
+  },
+  // Add more questions as before...
+];
+
+let currentQuestion = 0;
+const rosQuestion = document.getElementById('ros-question');
+const rosFeedback = document.getElementById('ros-feedback');
+
+// Function to load the next question in the Real or Scam game
+function loadNextQuestion() {
+  if (currentQuestion < questions.length) {
+    const question = questions[currentQuestion];
+    rosQuestion.textContent = question.question;
+  } else {
+    rosQuestion.textContent = "You've finished all the Real or Scam questions!";
+  }
+}
+
+// Function to check the answer in the Real or Scam game
+function checkAnswer(isReal) {
+  const question = questions[currentQuestion];
+  if (isReal === question.isReal) {
+    rosFeedback.textContent = "Correct! " + question.explanation;
+    document.getElementById('ding').play();
+  } else {
+    rosFeedback.textContent = "Oops! " + question.explanation;
+    document.getElementById('error').play();
+  }
+  currentQuestion++;
+  loadNextQuestion();
+}
+
+document.getElementById('start-game').addEventListener('click', () => {
+  initializePhrases();  // Initialize all phrases when the game starts
+  createBoard();  // Create the board
+  loadNextQuestion();  // Load the first Real or Scam question
+  updateCurrentPhrase();  // Read the first phrase automatically after starting
+});
+
+</script>
+
+</body>
+</html>
